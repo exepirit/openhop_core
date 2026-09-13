@@ -86,6 +86,7 @@ async def test_send_aggregates_metadata():
     assert result["ok"] is True
     assert "ra" in result["radio_id"]
     assert "rb" in result["radio_id"]
+    assert result.get("radio_ids_count") == 2
     assert "results" in result
     assert len(result["results"]) == 2
     radio_ids = {rid for rid, _meta in result["results"]}

@@ -43,5 +43,6 @@ class TwinHeadFabric(RFFabric):
         return {
             "ok": True,
             "radio_id": ",".join(successes),
+            "radio_ids_count": len(successes),
             "results": results,
         }
