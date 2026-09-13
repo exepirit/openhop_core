@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from openhop_core.node.dispatcher import Dispatcher
+from openhop_core.protocol import Packet
+from openhop_core.protocol.constants import PAYLOAD_TYPE_TXT_MSG
+from openhop_core.protocol.packet_filter import PacketFilter
+from openhop_core.rf_fabric import FabricRadio
 from openhop_core.rf_fabric.twin_head_fabric import TwinHeadFabric
 
 
@@ -145,3 +150,77 @@ async def test_send_no_radios_returns_none():
     result = await fabric.send(b"no-radio")
 
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher + TwinHeadFabric end-to-end ACK tests
+# ---------------------------------------------------------------------------
+
+
+class TestTwinHeadAck:
+    """CRC-based (radio-agnostic) ACK correlation with TwinHeadFabric."""
+
+    @staticmethod
+    def _make_packet(payload_bytes: bytes = b"test-data") -> "Packet":
+        pkt = Packet()
+        pkt.header = (PAYLOAD_TYPE_TXT_MSG << 2) | 1  # route=1 (flood)
+        pkt.payload = bytearray(payload_bytes)
+        pkt.payload_len = len(pkt.payload)
+        pkt.path_len = 0
+        return pkt
+
+    @staticmethod
+    def _make_dispatcher(*radios: _MockRadio) -> Dispatcher:
+        fabric = TwinHeadFabric()
+        for i, r in enumerate(radios):
+            fabric.register_radio(r, radio_id=f"r{i}")
+        return Dispatcher(FabricRadio(fabric=fabric), packet_filter=PacketFilter())
+
+    @pytest.mark.asyncio
+    async def test_ack_on_either_radio_resolves_twin_head_send(self):
+        """E2E: send via Dispatcher broadcasts to both radios; ACK is CRC-based."""
+        ra = _MockRadio("ra")
+        rb = _MockRadio("rb")
+        d = self._make_dispatcher(ra, rb)
+
+        pkt = self._make_packet()
+        raw = pkt.write_to()
+
+        result = await d.send_packet(pkt, wait_for_ack=False)
+        assert result is True
+        assert raw in ra.sent
+        assert raw in rb.sent
+
+        crc = pkt.get_crc()
+        ack_event = d.expect_ack(crc)
+        assert not ack_event.is_set()
+        assert crc in d._waiting_acks
+
+        await d._register_ack_received(crc)
+        assert ack_event.is_set()
+        assert crc not in d._waiting_acks
+        assert crc in d._recent_acks
+
+    @pytest.mark.asyncio
+    async def test_duplicate_ack_idempotent(self):
+        """Second ACK after resolution is harmless; re-expect fires instantly."""
+        ra = _MockRadio("ra")
+        rb = _MockRadio("rb")
+        d = self._make_dispatcher(ra, rb)
+
+        pkt = self._make_packet()
+        crc = pkt.get_crc()
+
+        event1 = d.expect_ack(crc)
+        assert not event1.is_set()
+
+        await d._register_ack_received(crc)
+        assert event1.is_set()
+        assert crc not in d._waiting_acks
+        assert crc in d._recent_acks
+
+        event2 = d.expect_ack(crc)
+        assert event2.is_set()
+
+        await d._register_ack_received(crc)
+        # no crash, no corruption
