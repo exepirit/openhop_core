@@ -103,6 +103,10 @@ class KissSerialWrapper(LoRaRadio):
         # Callbacks
         self.on_frame_received = on_frame_received
 
+        # Event loop reference for thread-safe RX callback dispatch.
+        # Set at connect() time when called from an async context.
+        self._event_loop = None
+
         # KISS Configuration
         self.config = {
             "txdelay": 30,  # TX delay (units of 10ms)
@@ -132,6 +136,12 @@ class KissSerialWrapper(LoRaRadio):
             True if connection successful, False otherwise
         """
         try:
+            # Capture the event loop for thread-safe RX callback dispatch.
+            try:
+                self._event_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+
             self.serial_conn = serial.Serial(
                 port=self.port,
                 baudrate=self.baudrate,
@@ -583,7 +593,8 @@ class KissSerialWrapper(LoRaRadio):
         Returns:
             Last RSSI value or -999 if not available
         """
-        return self.stats.get("last_rssi", -999)
+        val = self.stats.get("last_rssi", -999)
+        return -999 if val is None else val
 
     def get_last_snr(self) -> float:
         """
@@ -592,7 +603,8 @@ class KissSerialWrapper(LoRaRadio):
         Returns:
             Last SNR value or -999.0 if not available
         """
-        return self.stats.get("last_snr", -999.0)
+        val = self.stats.get("last_snr", -999.0)
+        return -999.0 if val is None else val
 
     def _encode_kiss_frame(self, cmd: int, data: bytes) -> bytes:
         """
@@ -786,7 +798,11 @@ class KissSerialWrapper(LoRaRadio):
                 self.stats["frames_received"] += 1
                 self.stats["bytes_received"] += len(data)
                 try:
-                    callback(data)
+                    loop = self._event_loop
+                    if loop is not None:
+                        loop.call_soon_threadsafe(callback, data)
+                    else:
+                        callback(data)
                 except Exception as e:
                     logger.error(f"Error in frame received callback: {e}")
         else:

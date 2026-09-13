@@ -110,6 +110,10 @@ class KissTcpWrapper(LoRaRadio):
 
         self.on_frame_received = on_frame_received
 
+        # Event loop reference for thread-safe RX callback dispatch.
+        # Set at connect() time when called from an async context.
+        self._event_loop = None
+
         self.config = {
             "txdelay": 30,
             "persist": 64,
@@ -138,6 +142,14 @@ class KissTcpWrapper(LoRaRadio):
             True if connection successful, False otherwise
         """
         try:
+            # Capture the event loop for thread-safe RX callback dispatch.
+            # If called from outside an async context the loop stays None
+            # and callbacks are invoked directly (for simple sync callbacks).
+            try:
+                self._event_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+
             self.sock = socket.create_connection(
                 (self.host, self.tcp_port),
                 timeout=self.connect_timeout,
@@ -482,7 +494,8 @@ class KissTcpWrapper(LoRaRadio):
         Returns:
             Last RSSI value or -999 if not available
         """
-        return self.stats.get("last_rssi", -999)
+        val = self.stats.get("last_rssi", -999)
+        return -999 if val is None else val
 
     def get_last_snr(self) -> float:
         """
@@ -491,7 +504,8 @@ class KissTcpWrapper(LoRaRadio):
         Returns:
             Last SNR value or -999.0 if not available
         """
-        return self.stats.get("last_snr", -999.0)
+        val = self.stats.get("last_snr", -999.0)
+        return -999.0 if val is None else val
 
     def _encode_kiss_frame(self, cmd: int, data: bytes) -> bytes:
         """
@@ -678,7 +692,11 @@ class KissTcpWrapper(LoRaRadio):
                 self.stats["frames_received"] += 1
                 self.stats["bytes_received"] += len(data)
                 try:
-                    callback(data)
+                    loop = self._event_loop
+                    if loop is not None:
+                        loop.call_soon_threadsafe(callback, data)
+                    else:
+                        callback(data)
                 except Exception as e:
                     logger.error(f"Error in frame received callback: {e}")
         else:
