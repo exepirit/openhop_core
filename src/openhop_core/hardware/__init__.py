@@ -58,6 +58,15 @@ except ImportError:
     _TCP_AVAILABLE = False
     TCPLoRaRadio = None
 
+# Conditional import for KissTcpWrapper (stdlib only — socket/threading/asyncio)
+try:
+    from .kiss_tcp_wrapper import KissTcpWrapper
+
+    _KISS_TCP_AVAILABLE = True
+except ImportError:
+    _KISS_TCP_AVAILABLE = False
+    KissTcpWrapper = None
+
 __all__ = ["LoRaRadio"]
 
 # Add WsRadio to exports if available
@@ -83,3 +92,7 @@ if _USB_AVAILABLE:
 # Add TCPLoRaRadio to exports if available
 if _TCP_AVAILABLE:
     __all__.append("TCPLoRaRadio")
+
+# Add KissTcpWrapper to exports if available
+if _KISS_TCP_AVAILABLE:
+    __all__.append("KissTcpWrapper")

@@ -36,6 +36,7 @@ RADIO_TYPES = [
     "uconsole",
     "meshadv-mini",
     "kiss-tnc",
+    "kiss-tcp",
     "kiss-modem",
     "ch341",
     "pinedio",
@@ -49,6 +50,8 @@ RADIO_TYPES = [
 def create_radio(
     radio_type: str = "waveshare",
     serial_port: str = "/dev/ttyUSB0",
+    tcp_host: str = "localhost",
+    tcp_port: int = 8001,
 ) -> LoRaRadio:
     """Create a radio instance with configuration for specified hardware.
 
@@ -58,6 +61,7 @@ def create_radio(
             "uconsole"      — uConsole LoRa module (SPI)
             "meshadv-mini"  — MeshAdv Mini (SPI)
             "kiss-tnc"      — KISS TNC over serial
+            "kiss-tcp"      — KISS TNC over TCP (modem73-compatible)
             "kiss-modem"    — MeshCore KISS modem over serial
             "ch341"         — SX1262 via CH341 USB-to-SPI adapter
             "pinedio"       — Similar to CH341 but different pinout
@@ -66,6 +70,8 @@ def create_radio(
             "pymc_usb"      — Compatibility alias for "modem_usb"
             "pymc_tcp"      — Compatibility alias for "modem_tcp"
         serial_port: Serial port path. Used by "kiss-tnc", "kiss-modem", and "modem_usb".
+        tcp_host: TCP hostname/IP for "kiss-tcp" radio type (default: localhost).
+        tcp_port: TCP port for "kiss-tcp" radio type (default: 8001, modem73 default).
 
     Returns:
         Radio instance configured for the specified hardware
@@ -97,6 +103,35 @@ def create_radio(
             logger.info("Created KISS Serial Wrapper")
             logger.info(
                 f"Frequency: {kiss_config['frequency']/1000000:.3f}MHz, TX Power: {kiss_config['power']}dBm"
+            )
+            return kiss_wrapper
+
+        # Check if this is a KISS-over-TCP configuration
+        if radio_type == "kiss-tcp":
+            from openhop_core.hardware.kiss_tcp_wrapper import KissTcpWrapper
+
+            logger.debug("Using KISS TCP Wrapper")
+
+            # KISS TNC configuration (radio params set via TNC config, not KISS)
+            kiss_config = {
+                "frequency": int(869.618 * 1000000),
+                "bandwidth": int(62.5 * 1000),
+                "spreading_factor": 8,
+                "coding_rate": 8,
+                "sync_word": 0x12,
+                "power": 22,
+            }
+
+            kiss_wrapper = KissTcpWrapper(
+                host=tcp_host,
+                tcp_port=tcp_port,
+                radio_config=kiss_config,
+                auto_configure=False,
+            )
+
+            logger.info("Created KISS TCP Wrapper")
+            logger.info(
+                f"Connecting to {tcp_host}:{tcp_port}"
             )
             return kiss_wrapper
 
@@ -341,7 +376,8 @@ def create_radio(
             raise ValueError(
                 f"Unknown radio type: {radio_type}. "
                 "Use 'waveshare', 'meshadv-mini', 'uconsole', 'kiss-tnc', "
-                "'kiss-modem', 'ch341', 'pinedio', 'modem_usb', or 'modem_tcp'"
+                "'kiss-tcp', 'kiss-modem', 'ch341', 'pinedio', 'modem_usb', "
+                "or 'modem_tcp'"
             )
 
         radio_kwargs = configs[radio_type]
@@ -366,6 +402,8 @@ def create_mesh_node(
     node_name: str = "ExampleNode",
     radio_type: str = "waveshare",
     serial_port: str = "/dev/ttyUSB0",
+    tcp_host: str = "localhost",
+    tcp_port: int = 8001,
     use_modem_identity: bool = False,
 ) -> tuple[MeshNode, LocalIdentity]:
     """Create a mesh node with radio.
@@ -373,9 +411,12 @@ def create_mesh_node(
     Args:
         node_name: Name for the mesh node
         radio_type: Type of radio hardware ("waveshare", "uconsole", "meshadv-mini",
-                    "kiss-tnc", "kiss-modem", "ch341", "modem_usb", or "modem_tcp")
+                    "kiss-tnc", "kiss-tcp", "kiss-modem", "ch341", "modem_usb",
+                    or "modem_tcp")
         serial_port: Serial port for KISS devices or an openHop Modem USB transport
                      (e.g. "/dev/ttyUSB0" for KISS or "/dev/ttyACM0" for a modem)
+        tcp_host: TCP hostname/IP for "kiss-tcp" radio type (default: localhost)
+        tcp_port: TCP port for "kiss-tcp" radio type (default: 8001, modem73 default)
         use_modem_identity: If True and radio_type is "kiss-modem", use the modem's
                            cryptographic identity instead of generating a local one.
                            This keeps the private key secure on the modem hardware.
@@ -388,7 +429,7 @@ def create_mesh_node(
     try:
         # Create the radio first (needed for modem identity)
         logger.debug("Creating radio...")
-        radio = create_radio(radio_type, serial_port)
+        radio = create_radio(radio_type, serial_port, tcp_host, tcp_port)
 
         # Initialize radio (different methods for different types)
         if radio_type == "kiss-tnc":
@@ -404,6 +445,21 @@ def create_mesh_node(
                 logger.error("Failed to connect KISS radio")
                 print(f"Failed to connect to KISS radio on {serial_port}")
                 raise Exception(f"KISS radio connection failed on {serial_port}")
+        elif radio_type == "kiss-tcp":
+            logger.debug("Connecting KISS TCP radio...")
+            if radio.connect():
+                logger.info("KISS TCP radio connected successfully")
+                print(f"KISS TCP radio connected to {tcp_host}:{tcp_port}")
+                if hasattr(radio, "kiss_mode_active") and radio.kiss_mode_active:
+                    print("KISS mode is active")
+                else:
+                    print("Warning: KISS mode may not be active")
+            else:
+                logger.error("Failed to connect KISS TCP radio")
+                print(f"Failed to connect to KISS TCP radio on {tcp_host}:{tcp_port}")
+                raise Exception(
+                    f"KISS TCP radio connection failed on {tcp_host}:{tcp_port}"
+                )
         elif radio_type == "kiss-modem":
             logger.debug("Connecting MeshCore KISS modem...")
             if radio.connect():

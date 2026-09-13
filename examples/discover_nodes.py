@@ -30,7 +30,7 @@ FILTER_REPEATERS = 0x04  # Bit 2 set for repeater node type
 async def discover_nodes(
     radio_type: str = "waveshare",
     serial_port: str = "/dev/ttyUSB0",
-    timeout: float = 5.0,
+    timeout: float = 30.0,
     filter_mask: int = FILTER_REPEATERS,
 ):
     """
