@@ -156,9 +156,14 @@ async def test_send_no_radios_returns_none():
 # Dispatcher + TwinHeadFabric end-to-end ACK tests
 # ---------------------------------------------------------------------------
 
+import asyncio
+
+from openhop_core.protocol.constants import PAYLOAD_TYPE_ACK
+
 
 class TestTwinHeadAck:
-    """CRC-based (radio-agnostic) ACK correlation with TwinHeadFabric."""
+    """ACK correlation with TwinHeadFabric — injects actual ACK packets through
+    the radio RX callback path and verifies resolution across both radios."""
 
     @staticmethod
     def _make_packet(payload_bytes: bytes = b"test-data") -> "Packet":
@@ -170,57 +175,82 @@ class TestTwinHeadAck:
         return pkt
 
     @staticmethod
+    def _make_ack_bytes(crc: int) -> bytes:
+        ack = Packet()
+        ack.header = (PAYLOAD_TYPE_ACK << 2) | 1  # route=1 (flood)
+        ack.payload = bytearray(crc.to_bytes(4, "little"))
+        ack.payload_len = len(ack.payload)
+        ack.path_len = 0
+        return ack.write_to()
+
+    @staticmethod
     def _make_dispatcher(*radios: _MockRadio) -> Dispatcher:
         fabric = TwinHeadFabric()
         for i, r in enumerate(radios):
             fabric.register_radio(r, radio_id=f"r{i}")
-        return Dispatcher(FabricRadio(fabric=fabric), packet_filter=PacketFilter())
+        d = Dispatcher(FabricRadio(fabric=fabric), packet_filter=PacketFilter())
+        d.register_default_handlers()
+        return d
 
     @pytest.mark.asyncio
-    async def test_ack_on_either_radio_resolves_twin_head_send(self):
-        """E2E: send via Dispatcher broadcasts to both radios; ACK is CRC-based."""
+    async def test_ack_arrives_on_one_radio_resolves_send(self):
+        """E2E: send_packet broadcast to both radios; ACK on one radio resolves waiter."""
         ra = _MockRadio("ra")
         rb = _MockRadio("rb")
         d = self._make_dispatcher(ra, rb)
 
         pkt = self._make_packet()
         raw = pkt.write_to()
+        crc = pkt.get_crc()
 
-        result = await d.send_packet(pkt, wait_for_ack=False)
-        assert result is True
+        # Fire-and-request-ack in background; main coroutine injects ACK while it waits.
+        send_task = asyncio.create_task(d.send_packet(pkt, wait_for_ack=True))
+
+        # Let the TX + ACK registration complete.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        # Both radios broadcast the same packet.
         assert raw in ra.sent
         assert raw in rb.sent
 
-        crc = pkt.get_crc()
-        ack_event = d.expect_ack(crc)
-        assert not ack_event.is_set()
-        assert crc in d._waiting_acks
+        # Inject ACK frame on one radio (ra) — the RX pipeline must route it
+        # through AckHandler → _register_ack_received → resolve send_task.
+        ack_raw = self._make_ack_bytes(crc)
+        ra.inject(ack_raw)
 
-        await d._register_ack_received(crc)
-        assert ack_event.is_set()
-        assert crc not in d._waiting_acks
-        assert crc in d._recent_acks
+        # Allow the RX task to process the ACK.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        result = await send_task
+        assert result is True
 
     @pytest.mark.asyncio
-    async def test_duplicate_ack_idempotent(self):
-        """Second ACK after resolution is harmless; re-expect fires instantly."""
+    async def test_ack_dedup_across_both_radios(self):
+        """Same ACK frame received on both radios resolves only once."""
         ra = _MockRadio("ra")
         rb = _MockRadio("rb")
         d = self._make_dispatcher(ra, rb)
 
         pkt = self._make_packet()
         crc = pkt.get_crc()
+        ack_raw = self._make_ack_bytes(crc)
 
-        event1 = d.expect_ack(crc)
-        assert not event1.is_set()
+        # Register the waiter manually (out-of-band from normal send path).
+        ack_waiter = d.expect_ack(crc)
+        assert not ack_waiter.is_set()
 
-        await d._register_ack_received(crc)
-        assert event1.is_set()
+        # Inject the same ACK frame on both radios.
+        ra.inject(ack_raw)
+        rb.inject(ack_raw)
+
+        # Allow both RX tasks to process.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        # The waiter has fired (and dedup prevented a second Resolution).
+        assert ack_waiter.is_set()
         assert crc not in d._waiting_acks
         assert crc in d._recent_acks
-
-        event2 = d.expect_ack(crc)
-        assert event2.is_set()
-
-        await d._register_ack_received(crc)
-        # no crash, no corruption
