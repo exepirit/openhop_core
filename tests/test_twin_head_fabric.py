@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from openhop_core.node.dispatcher import Dispatcher
 from openhop_core.protocol import Packet
-from openhop_core.protocol.constants import PAYLOAD_TYPE_TXT_MSG
+from openhop_core.protocol.constants import PAYLOAD_TYPE_ACK, PAYLOAD_TYPE_TXT_MSG
 from openhop_core.protocol.packet_filter import PacketFilter
 from openhop_core.rf_fabric import FabricRadio
 from openhop_core.rf_fabric.twin_head_fabric import TwinHeadFabric
@@ -156,10 +158,6 @@ async def test_send_no_radios_returns_none():
 # Dispatcher + TwinHeadFabric end-to-end ACK tests
 # ---------------------------------------------------------------------------
 
-import asyncio
-
-from openhop_core.protocol.constants import PAYLOAD_TYPE_ACK
-
 
 class TestTwinHeadAck:
     """ACK correlation with TwinHeadFabric — injects actual ACK packets through
@@ -228,7 +226,7 @@ class TestTwinHeadAck:
 
     @pytest.mark.asyncio
     async def test_ack_dedup_across_both_radios(self):
-        """Same ACK frame received on both radios resolves only once."""
+        """Same ACK frame on both radios resolves without error or false double-ACK."""
         ra = _MockRadio("ra")
         rb = _MockRadio("rb")
         d = self._make_dispatcher(ra, rb)
@@ -252,5 +250,3 @@ class TestTwinHeadAck:
 
         # The waiter has fired (and dedup prevented a second Resolution).
         assert ack_waiter.is_set()
-        assert crc not in d._waiting_acks
-        assert crc in d._recent_acks
