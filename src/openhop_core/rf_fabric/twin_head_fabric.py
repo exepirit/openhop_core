@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Optional
 
 from .fabric import RFFabric
+
+logger = logging.getLogger(__name__)
 
 
 class TwinHeadFabric(RFFabric):
@@ -21,6 +24,7 @@ class TwinHeadFabric(RFFabric):
         tasks = {}
         for rid, radio in self._radios.items():
             if not hasattr(radio, "send"):
+                logger.warning("Radio %r does not support send()", rid)
                 continue
             tasks[rid] = asyncio.create_task(radio.send(data))
 
@@ -33,8 +37,11 @@ class TwinHeadFabric(RFFabric):
             try:
                 result = await task
                 successes.append(rid)
+                if isinstance(result, dict):
+                    result.setdefault("radio_id", rid)
                 results.append((rid, result))
             except Exception:
+                logger.exception("TX failed on radio %r", rid)
                 results.append((rid, None))
 
         if not successes:
