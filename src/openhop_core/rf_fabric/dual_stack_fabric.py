@@ -1,4 +1,4 @@
-"""TwinHeadFabric: broadcast to all radios concurrently."""
+"""DualStackFabric: broadcast to all radios concurrently."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .fabric import RFFabric
 logger = logging.getLogger(__name__)
 
 
-class TwinHeadFabric(RFFabric):
+class DualStackFabric(RFFabric):
     """RFFabric subclass that broadcasts on every registered radio."""
 
     async def send(self, data: bytes, *, radio_id: Optional[str] = None) -> Any:

@@ -1,4 +1,4 @@
-"""TwinHeadFabric — broadcast send to all radios concurrently."""
+"""DualStackFabric — broadcast send to all radios concurrently."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from openhop_core.protocol import Packet
 from openhop_core.protocol.constants import PAYLOAD_TYPE_ACK, PAYLOAD_TYPE_TXT_MSG
 from openhop_core.protocol.packet_filter import PacketFilter
 from openhop_core.rf_fabric import FabricRadio
-from openhop_core.rf_fabric.twin_head_fabric import TwinHeadFabric
+from openhop_core.rf_fabric.dual_stack_fabric import DualStackFabric
 
 
 class _MockRadio:
@@ -66,7 +66,7 @@ class _FailingRadio:
 
 @pytest.mark.asyncio
 async def test_send_broadcasts_to_all_radios():
-    fabric = TwinHeadFabric()
+    fabric = DualStackFabric()
     ra = _MockRadio("ra")
     rb = _MockRadio("rb")
     fabric.register_radio(ra, radio_id="ra")
@@ -82,7 +82,7 @@ async def test_send_broadcasts_to_all_radios():
 
 @pytest.mark.asyncio
 async def test_send_aggregates_metadata():
-    fabric = TwinHeadFabric()
+    fabric = DualStackFabric()
     ra = _MockRadio("ra")
     rb = _MockRadio("rb")
     fabric.register_radio(ra, radio_id="ra")
@@ -102,7 +102,7 @@ async def test_send_aggregates_metadata():
 
 @pytest.mark.asyncio
 async def test_send_still_supports_explicit_radio_id():
-    fabric = TwinHeadFabric()
+    fabric = DualStackFabric()
     ra = _MockRadio("ra")
     rb = _MockRadio("rb")
     fabric.register_radio(ra, radio_id="ra")
@@ -117,7 +117,7 @@ async def test_send_still_supports_explicit_radio_id():
 
 @pytest.mark.asyncio
 async def test_one_radio_fail_does_not_crash():
-    fabric = TwinHeadFabric()
+    fabric = DualStackFabric()
     ra = _MockRadio("ra")
     rb = _FailingRadio("rb")
     fabric.register_radio(ra, radio_id="ra")
@@ -134,7 +134,7 @@ async def test_one_radio_fail_does_not_crash():
 
 @pytest.mark.asyncio
 async def test_all_radios_fail_returns_failure():
-    fabric = TwinHeadFabric()
+    fabric = DualStackFabric()
     ra = _FailingRadio("ra")
     rb = _FailingRadio("rb")
     fabric.register_radio(ra, radio_id="ra")
@@ -147,7 +147,7 @@ async def test_all_radios_fail_returns_failure():
 
 @pytest.mark.asyncio
 async def test_send_no_radios_returns_none():
-    fabric = TwinHeadFabric()
+    fabric = DualStackFabric()
 
     result = await fabric.send(b"no-radio")
 
@@ -155,12 +155,12 @@ async def test_send_no_radios_returns_none():
 
 
 # ---------------------------------------------------------------------------
-# Dispatcher + TwinHeadFabric end-to-end ACK tests
+# Dispatcher + DualStackFabric end-to-end ACK tests
 # ---------------------------------------------------------------------------
 
 
-class TestTwinHeadAck:
-    """ACK correlation with TwinHeadFabric — injects actual ACK packets through
+class TestDualStackAck:
+    """ACK correlation with DualStackFabric — injects actual ACK packets through
     the radio RX callback path and verifies resolution across both radios."""
 
     @staticmethod
@@ -183,7 +183,7 @@ class TestTwinHeadAck:
 
     @staticmethod
     def _make_dispatcher(*radios: _MockRadio) -> Dispatcher:
-        fabric = TwinHeadFabric()
+        fabric = DualStackFabric()
         for i, r in enumerate(radios):
             fabric.register_radio(r, radio_id=f"r{i}")
         d = Dispatcher(FabricRadio(fabric=fabric), packet_filter=PacketFilter())

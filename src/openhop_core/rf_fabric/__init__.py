@@ -13,12 +13,12 @@ Provides an optional multi-radio fabric without changing legacy
 from .fabric import RFFabric
 from .fabric_radio import FabricRadio
 from .models import RadioReception, RFIngress
-from .twin_head_fabric import TwinHeadFabric
+from .dual_stack_fabric import DualStackFabric
 
 __all__ = [
     "FabricRadio",
     "RFFabric",
     "RFIngress",
     "RadioReception",
-    "TwinHeadFabric",
+    "DualStackFabric",
 ]
