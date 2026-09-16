@@ -93,6 +93,11 @@ async def dual_stack(
     print(f"  ✓ Dispatcher ready (node: {node_name})")
     print()
 
+    print("[3.1] Initialising radios (begin())...")
+    fabric_radio.begin()
+    print("  ✓ All radios initialised")
+    print()
+
     class _Stats:
         rx_per_stack: dict[str, int] = {"stack0": 0, "stack1": 0}
         tx_broadcasts: int = 0
