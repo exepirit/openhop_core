@@ -132,21 +132,24 @@ async def dual_stack(
         from openhop_core.protocol.constants import PAYLOAD_TYPE_ADVERT
 
         await asyncio.sleep(2)
-        print()
-        print("[4] Broadcasting test advert on BOTH stacks...")
-        pkt = Packet()
-        pkt.header = (PAYLOAD_TYPE_ADVERT << 2) | 1  # flood route
-        pkt.payload = bytearray(b"dual-stack-hello")
-        pkt.payload_len = len(pkt.payload)
-        pkt.path_len = 0
+        while True:
+            print()
+            print("[4] Broadcasting test advert on BOTH stacks...")
+            pkt = Packet()
+            pkt.header = (PAYLOAD_TYPE_ADVERT << 2) | 1  # flood route
+            pkt.payload = bytearray(b"dual-stack-hello")
+            pkt.payload_len = len(pkt.payload)
+            pkt.path_len = 0
 
-        result = await dispatcher.send_packet(pkt, wait_for_ack=False)
-        if result:
-            stats.tx_broadcasts += 1
-            print(f"  ✓ Advert broadcast on stack0 + stack1")
-        else:
-            print("  ✗ TX failed")
-        print()
+            result = await dispatcher.send_packet(pkt, wait_for_ack=False)
+            if result:
+                stats.tx_broadcasts += 1
+                print(f"  ✓ Advert broadcast on stack0 + stack1")
+            else:
+                print("  ✗ TX failed")
+            print()
+
+            await asyncio.sleep(30)  # re-broadcast every 30s
 
     async def periodic_status():
         start = time.monotonic()
@@ -167,7 +170,7 @@ async def dual_stack(
     ]
 
     try:
-        done, pending = await asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(tasks, timeout=timeout)
         for t in pending:
             t.cancel()
     except KeyboardInterrupt:
