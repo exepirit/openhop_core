@@ -23,6 +23,7 @@ Features:
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import sys
@@ -41,8 +42,9 @@ from openhop_core.protocol.packet_filter import PacketFilter
 logger = logging.getLogger("dual_stack_example")
 
 
-def _make_identity() -> LocalIdentity:
-    return LocalIdentity()
+def _make_identity(node_name: str) -> LocalIdentity:
+    seed = hashlib.sha256(node_name.encode()).digest()
+    return LocalIdentity(seed=seed)
 
 
 async def dual_stack(
@@ -82,7 +84,7 @@ async def dual_stack(
 
     print("[3] Initialising dispatcher...")
     node_name = "DualStackNode"
-    identity = _make_identity()
+    identity = _make_identity(node_name)
     dispatcher = Dispatcher(
         fabric_radio,
         log_fn=logger.info,
