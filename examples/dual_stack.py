@@ -16,7 +16,9 @@ Features:
 - Two radios on independent frequencies/configurations
 - TX broadcast — every outgoing packet transmits on both interfaces
 - Per-radio RX tracking — know which radio delivered each incoming packet
-- Optional bridging loop — RX on one radio is rebroadcast on the other
+- MeshCore-compliant bridging — client-repeat mode forwards flood packets
+  according to routing rules; DualStackFabric TX broadcast ensures the
+  forwarded packet crosses to the other frequency stack automatically
   (enable with --bridge)
 """
 
@@ -99,10 +101,22 @@ async def dual_stack(
     print("  ✓ All radios initialised")
     print()
 
+    print("[3.2] Configuring cross-stack bridging...")
+    if bridge:
+        # Enable client-repeat mode: packets that should be forwarded per
+        # MeshCore rules are re-transmitted by the Dispatcher.  Because
+        # DualStackFabric broadcasts every TX to all radios, the forwarded
+        # packet automatically crosses to the other stack without any
+        # manual raw-level bridging.
+        dispatcher.set_client_repeat_enabled(True)
+        print("  ✓ Bridge ON — Dispatcher client-repeat will forward on both stacks")
+    else:
+        print("  ✓ Bridge OFF")
+    print()
+
     class _Stats:
         rx_per_stack: dict[str, int] = {"stack0": 0, "stack1": 0}
         tx_broadcasts: int = 0
-        bridge_forwards: int = 0
 
     stats = _Stats()
 
@@ -115,16 +129,6 @@ async def dual_stack(
             f"RSSI={rssi}dBm  SNR={snr:+.1f}dB  "
             f"(total rx: stack0={stats.rx_per_stack['stack0']} stack1={stats.rx_per_stack['stack1']})"
         )
-
-        if bridge:
-            other = "stack1" if rx_rid == "stack0" else "stack0"
-            try:
-                await fabric.send(data, radio_id=other)
-                stats.bridge_forwards += 1
-                rtag = "→" if other == "stack0" else "←"
-                print(f"  BRIDGE [{rtag} {other}] {len(data)} bytes forwarded")
-            except Exception:
-                pass
 
     dispatcher.add_raw_rx_subscriber(on_raw_rx)
 
@@ -157,7 +161,7 @@ async def dual_stack(
             print(
                 f"[{elapsed:3d}s] rx: stack0={stats.rx_per_stack['stack0']} "
                 f"stack1={stats.rx_per_stack['stack1']}  "
-                f"tx: {stats.tx_broadcasts}  bridge: {stats.bridge_forwards}  "
+                f"tx: {stats.tx_broadcasts}  "
                 f"({remaining}s remaining)"
             )
 
@@ -182,8 +186,6 @@ async def dual_stack(
     print(f"  RX stack0:  {stats.rx_per_stack['stack0']}")
     print(f"  RX stack1:  {stats.rx_per_stack['stack1']}")
     print(f"  TX broadcasts: {stats.tx_broadcasts}")
-    if bridge:
-        print(f"  Bridge forwards: {stats.bridge_forwards}")
     print("=" * 60)
 
 
