@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from common import RADIO_TYPES, create_mesh_node, create_radio
 
 from openhop_core.protocol import LocalIdentity
+from openhop_core.protocol.packet_builder import PacketBuilder
 from openhop_core.rf_fabric import DualStackFabric, FabricRadio
 from openhop_core.node.dispatcher import Dispatcher
 from openhop_core.protocol.packet_filter import PacketFilter
@@ -128,18 +129,14 @@ async def dual_stack(
     dispatcher.add_raw_rx_subscriber(on_raw_rx)
 
     async def periodic_broadcast():
-        from openhop_core.protocol import Packet
-        from openhop_core.protocol.constants import PAYLOAD_TYPE_ADVERT
-
         await asyncio.sleep(2)
         while True:
             print()
-            print("[4] Broadcasting test advert on BOTH stacks...")
-            pkt = Packet()
-            pkt.header = (PAYLOAD_TYPE_ADVERT << 2) | 1  # flood route
-            pkt.payload = bytearray(b"dual-stack-hello")
-            pkt.payload_len = len(pkt.payload)
-            pkt.path_len = 0
+            print("[4] Broadcasting advert on BOTH stacks...")
+            pkt = PacketBuilder.create_advert(
+                identity,
+                name=node_name,
+            )
 
             result = await dispatcher.send_packet(pkt, wait_for_ack=False)
             if result:
